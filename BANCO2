@@ -1,0 +1,232 @@
+import csv
+import os
+import datetime
+from locale import setlocale, LC_ALL, currency
+
+# Classe Cliente para representar as informações do cliente
+class Cliente:
+    def __init__(self, nome, cpf, endereco, numero_conta):
+        self.nome = nome
+        self.cpf = cpf
+        self.endereco = endereco
+        self.numero_conta = numero_conta
+        self.saldo = 0  # Inicializa o saldo como zero
+
+
+    def deposito(self, valor):
+        # Função para realizar um depósito na conta do cliente
+        self.saldo = self.saldo_anterior + valor
+        self.saldo_anterior = self.saldo
+        self.salvar_transacao("Depósito", valor)
+
+    def saque(self, valor):
+        # Verifica o valor total dos saques do dia
+        total_saques_dia = self.calcular_total_saques_dia()
+        
+        # Verifica se o valor do saque não excede o limite diário
+        if total_saques_dia + valor <= 500:
+            if self.saldo_anterior >= valor:
+                self.saldo = self.saldo_anterior - valor
+                self.saldo_anterior = self.saldo
+                self.salvar_transacao("Saque", valor)
+            else:
+                print("Saldo insuficiente.")
+        else:
+            print("Limite diário de saque excedido (R$500).")
+
+    def calcular_total_saques_dia(self):
+        total = 0
+        data_atual = datetime.datetime.now().strftime('%d/%m/%Y')
+        
+        arquivo_csv = os.path.join("banco", f"mov_{self.cpf}.csv")
+        if os.path.exists(arquivo_csv):
+            with open(arquivo_csv, mode="r") as arquivo:
+                leitor = csv.reader(arquivo)
+                next(leitor)  # Pular a primeira linha (cabeçalhos)
+                for linha in leitor:
+                    data, _, tipo, valor, _ = linha
+                    if data == data_atual and tipo == "Saque":
+                        total += float(valor)
+        return total
+
+
+    def extrato(self):
+        # Função para exibir o extrato das transações do cliente
+        print("#" * 30 + "   EXTRATO   " + "#" * 29)
+        informacoes_conta = f"Banco: 001  - Agência: 0001 - Conta: {self.numero_conta}"
+        espacos_info_conta = 54 - len(informacoes_conta)
+        print("#" * espacos_info_conta + f"   {informacoes_conta}   " + "#" * espacos_info_conta)
+
+        print("\nMovimentações:")
+        print("Data           Hora           Tipo           Valor            Saldo")
+
+        arquivo_csv = os.path.join("banco", f"mov_{self.cpf}.csv")
+        if os.path.exists(arquivo_csv):
+            with open(arquivo_csv, mode="r") as arquivo:
+                leitor = csv.reader(arquivo)
+                next(leitor)  # Pular a primeira linha (cabeçalhos)
+                for linha in leitor:
+                    data, hora, tipo, valor, saldo = linha
+                    espacos_data = 15 - len(data)
+                    espacos_hora = 15 - len(hora)
+                    espacos_tipo = 15 - len(tipo)
+                    
+                    setlocale(LC_ALL, 'pt_BR.UTF-8')  # ou a localização apropriada
+                    valor_formatado = currency(float(valor))
+                    saldo_formatado = currency(float(saldo))
+                    
+                    espacos_valor = 17 - len(valor_formatado)
+                    espacos_saldo = 25 - len(saldo_formatado)
+                    
+                    print(f"{data}{' ' * espacos_data}{hora}{' ' * espacos_hora}{tipo}{' ' * espacos_tipo}{valor_formatado}{' ' * espacos_valor}{saldo_formatado}{' ' * espacos_saldo}")
+               
+                print("\n")    
+                texto = datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+                espacos = 43 - len(texto)
+                print("#" * espacos + f"   {texto}   " + "#" * espacos)
+        print("\n")
+    
+    def salvar_transacao(self, tipo, valor):
+        # Função para salvar a transação em um arquivo CSV
+        data_hora = datetime.datetime.now()
+        arquivo_csv = os.path.join("banco", f"mov_{self.cpf}.csv")
+        if not os.path.exists(arquivo_csv):
+            with open(arquivo_csv, mode="w", newline="") as arquivo:
+                escritor = csv.writer(arquivo)
+                escritor.writerow(["Data", "Hora", "Tipo", "Valor", "Saldo"])
+
+        # Lê o saldo anterior do arquivo de dados do cliente
+        saldo_anterior = 0
+        arquivo_dados = os.path.join("banco", f"dados_{self.cpf}.csv")
+        if os.path.exists(arquivo_dados):
+            with open(arquivo_dados, mode="r") as arquivo:
+                leitor = csv.reader(arquivo)
+                linhas = list(leitor)
+                for i, linha in enumerate(linhas):
+                    if linha[0] == "Saldo":
+                        saldo_anterior = float(linha[1])
+                        linhas[i] = ["Saldo", str(saldo_anterior)]  # Atualiza o saldo
+
+            with open(arquivo_dados, mode="w", newline="") as arquivo:
+                escritor = csv.writer(arquivo)
+                for linha in linhas:
+                    escritor.writerow(linha)
+
+        saldo_atual = saldo_anterior  # Saldo anterior à transação
+
+        # Calcula o novo saldo após a transação
+        if tipo == "Depósito":
+            saldo_atual += valor
+        elif tipo == "Saque":
+            saldo_atual -= valor
+
+        # Atualiza o valor do saldo no arquivo de dados do cliente
+        if os.path.exists(arquivo_dados):
+            with open(arquivo_dados, mode="r") as arquivo:
+                leitor = csv.reader(arquivo)
+                linhas = list(leitor)
+                for i, linha in enumerate(linhas):
+                    if linha[0] == "Saldo":
+                        linhas[i] = ["Saldo", str(saldo_atual)]  # Atualiza o saldo
+
+            with open(arquivo_dados, mode="w", newline="") as arquivo:
+                escritor = csv.writer(arquivo)
+                for linha in linhas:
+                    escritor.writerow(linha)
+
+        with open(arquivo_csv, mode="a", newline="") as arquivo:
+            escritor = csv.writer(arquivo)
+            escritor.writerow([data_hora.strftime('%d/%m/%Y'), data_hora.strftime('%H:%M:%S'), tipo, valor, saldo_atual])
+
+
+# Código de inicialização e menu
+pasta_banco = "banco"
+if not os.path.exists(pasta_banco):
+    os.makedirs(pasta_banco)
+
+cpf = input("Digite seu CPF: ")
+arquivo_dados = os.path.join(pasta_banco, f"dados_{cpf}.csv")
+arquivo_movimentacoes = os.path.join(pasta_banco, f"mov_{cpf}.csv")
+
+# Verifica se o cliente já está cadastrado ou se é um novo cliente
+if not os.path.exists(arquivo_dados):
+    nome = input("Digite seu nome: ")
+    endereco = input("Digite seu endereço: ")
+    
+    # Lendo o número sequencial da conta do arquivo
+    sequencial_arquivo = os.path.join(pasta_banco, "sequencial.csv")
+    if not os.path.exists(sequencial_arquivo):
+        with open(sequencial_arquivo, mode="w", newline="") as arquivo:
+            escritor = csv.writer(arquivo)
+            escritor.writerow(["NumeroConta"])
+            escritor.writerow([100001])
+
+    with open(sequencial_arquivo, mode="r") as arquivo:
+        leitor = csv.reader(arquivo)
+        next(leitor)  # Pular a primeira linha (cabeçalho)
+        numero_conta = int(next(leitor)[0])  # Lê o número sequencial da conta
+        proximo_numero_conta = numero_conta + 1  # Calcula o próximo número de conta
+        with open(sequencial_arquivo, mode="w", newline="") as sequencial:
+            escritor_sequencial = csv.writer(sequencial)
+            escritor_sequencial.writerow(["NumeroConta"])
+            escritor_sequencial.writerow([proximo_numero_conta])  # Atualiza o número sequencial
+
+    # Criando o cliente com as informações
+    cliente = Cliente(nome, cpf, endereco, numero_conta)
+    cliente.saldo_anterior = 0  # Adicione esta linha para definir o saldo anterior como 0
+    print("Cliente cadastrado com sucesso!")
+
+
+    # Salvar os dados do cliente em um arquivo
+    with open(arquivo_dados, mode="w", newline="") as arquivo:
+        escritor = csv.writer(arquivo)
+        escritor.writerow(["Nome", cliente.nome])
+        escritor.writerow(["CPF", cliente.cpf])
+        escritor.writerow(["Endereço", cliente.endereco])
+        escritor.writerow(["NumeroConta", cliente.numero_conta])
+        escritor.writerow(["Saldo", 0])
+else:
+
+    cliente = Cliente("", cpf, "", 0)  # Passa um valor padrão para o número da conta temporariamente
+    with open(arquivo_dados, mode="r") as arquivo:
+        leitor = csv.reader(arquivo)
+        for linha in leitor:
+            if linha[0] == "Nome":
+                cliente.nome = linha[1]
+            elif linha[0] == "CPF":
+                cliente.cpf = linha[1]
+            elif linha[0] == "Endereço":
+                cliente.endereco = linha[1]
+            elif linha[0] == "NumeroConta":
+                cliente.numero_conta = int(linha[1])
+            elif linha[0] == "Saldo":
+                cliente.saldo_anterior = float(linha[1])  # Define o saldo anterior
+
+# Menu de operações
+while True:
+    print("0 - Sair")
+    print("D - Depósito")
+    print("S - Saque")
+    print("E - Extrato")
+    opcao = input("Escolha uma opção: ").upper()
+
+    if opcao == "0":
+        print("Saindo...")
+        break
+    elif opcao == "D":
+        try:
+            valor = float(input("Digite o valor do depósito: "))
+            cliente.deposito(valor)
+        except ValueError:
+            print("Valor inválido. Por favor, insira um valor numérico.")
+    elif opcao == "S":
+        try:
+            valor = float(input("Digite o valor do saque: "))
+            cliente.saque(valor)
+        except ValueError:
+            print("Valor inválido. Por favor, insira um valor numérico.")
+    elif opcao == "E":
+        cliente.extrato()
+    else:
+        print("Opção inválida.")
+
